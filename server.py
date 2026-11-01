@@ -7,8 +7,6 @@ Multi-agent poster studio with subject vault, vision QA, batch export, client ap
 import json
 import os
 import uuid
-import base64
-import hashlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timezone
@@ -153,9 +151,17 @@ class ProjectManifest:
 # ============================================================================
 
 def compute_face_embedding(image_path: str) -> List[float]:
-    """Extract face embedding using CLIP image encoder."""
+    """Extract face embedding using CLIP image encoder.
+
+    Missing or unreadable images return an empty embedding instead of
+    raising, so callers (subject match, vision QA) degrade gracefully
+    to similarity 0.0 / pass=False.
+    """
     model, processor = get_clip()
-    image = Image.open(image_path).convert("RGB")
+    try:
+        image = Image.open(image_path).convert("RGB")
+    except (FileNotFoundError, OSError):
+        return []
     inputs = processor(images=image, return_tensors="pt")
     with torch.no_grad():
         outputs = model.get_image_features(**inputs)
@@ -166,10 +172,19 @@ def compute_face_embedding(image_path: str) -> List[float]:
 
 
 def compute_similarity(emb1: List[float], emb2: List[float]) -> float:
-    """Cosine similarity between two embeddings."""
-    a = np.array(emb1)
-    b = np.array(emb2)
-    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+    """Cosine similarity between two embeddings.
+
+    Zero-length or empty vectors return 0.0 instead of nan so callers
+    (subject match, vision QA, scan issues) never emit a non-JSON-safe
+    similarity value.
+    """
+    a = np.array(emb1, dtype=float)
+    b = np.array(emb2, dtype=float)
+    na = float(np.linalg.norm(a))
+    nb = float(np.linalg.norm(b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return float(np.dot(a, b) / (na * nb))
 
 
 def detect_gold_hoop_earrings(image_path: str) -> Dict[str, Any]:
@@ -355,8 +370,13 @@ def detect_issues_with_visualization(image_path: str, subject_id: Optional[str] 
                     })
                 else:
                     scan_frames.append({'region': 'face', 'bbox': [int(w*0.25), int(h*0.15), int(w*0.5), int(h*0.4)], 'issue': 'ok', 'severity': 'none'})
-        except:
-            pass
+        except FileNotFoundError:
+            issues['likeness'] = {
+                'pass': False,
+                'reason': f'Subject {subject_id} not found',
+                'score': 0.0,
+                'threshold': LIKENESS_THRESHOLD,
+            }
     
     # 3. Cropping check - bottom region
     cropped = not check_no_cropped_hands_feet(image_path)
@@ -689,7 +709,16 @@ def brandly_subject_save(
 @mcp.tool()
 def brandly_subject_match(generated_image_path: str, subject_id: str) -> dict:
     """Match generated image against subject vault — returns similarity score."""
-    subject = SubjectProfile.load(subject_id)
+    try:
+        subject = SubjectProfile.load(subject_id)
+    except FileNotFoundError:
+        return {
+            "subject_id": subject_id,
+            "similarity": 0.0,
+            "pass": False,
+            "reason": f"Subject {subject_id} not found",
+            "threshold": LIKENESS_THRESHOLD,
+        }
     if not subject.face_embedding:
         return {"pass": False, "reason": "Subject has no face embedding"}
 
@@ -728,7 +757,14 @@ def brandly_create_poster(
     resolution: str = "2:3",
 ) -> dict:
     """Create base poster with master prompt and variant plan."""
-    subject = SubjectProfile.load(subject_id)
+    try:
+        subject = SubjectProfile.load(subject_id)
+    except FileNotFoundError:
+        return {
+            "subject_id": subject_id,
+            "pass": False,
+            "error": f"Subject {subject_id} not found",
+        }
 
     # Use subject's story/outfit if not overridden
     effective_story = story or subject.story
@@ -1024,8 +1060,8 @@ def brandly_scan_issues(image_path: str, subject_id: Optional[str] = None, creat
         try:
             subject = SubjectProfile.load(subject_id)
             base_prompt = f"Poster for {subject.name}, genre preset"
-        except:
-            pass
+        except FileNotFoundError:
+            base_prompt = f"Poster for {subject_id} (subject not found)"
     
     fix_prompt = generate_fix_prompt_from_issues(result['issues'], base_prompt)
     
@@ -1240,7 +1276,15 @@ def brandly_batch_export(
     if formats is None:
         formats = ["theatrical", "deck", "social", "story"]
 
-    project = ProjectManifest.load(project_id)
+    try:
+        project = ProjectManifest.load(project_id)
+    except FileNotFoundError:
+        return {
+            "project_id": project_id,
+            "pass": False,
+            "error": f"Project {project_id} not found",
+            "variants": [],
+        }
 
     project_dir = PROJECTS_DIR / project_id
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -1271,7 +1315,15 @@ def brandly_batch_export(
 @mcp.tool()
 def brandly_share_review(project_id: str) -> dict:
     """Generate a shareable review URL (stub - in real app would serve static HTML)."""
-    project = ProjectManifest.load(project_id)
+    try:
+        project = ProjectManifest.load(project_id)
+    except FileNotFoundError:
+        return {
+            "project_id": project_id,
+            "pass": False,
+            "error": f"Project {project_id} not found",
+            "review_url": None,
+        }
     review_id = str(uuid.uuid4())[:8]
     # In production, would generate static HTML at /mnt/data/.../review_<id>.html
     review_url = f"file://{PROJECTS_DIR}/{project_id}/review_{review_id}.html"
@@ -1298,7 +1350,15 @@ def brandly_compare_versions(variant_a_path: str, variant_b_path: str) -> dict:
 @mcp.tool()
 def brandly_approve_version(project_id: str, version_id: str, client_signature: str = "") -> dict:
     """Lock final approved version."""
-    project = ProjectManifest.load(project_id)
+    try:
+        project = ProjectManifest.load(project_id)
+    except FileNotFoundError:
+        return {
+            "project_id": project_id,
+            "pass": False,
+            "error": f"Project {project_id} not found",
+            "locked": False,
+        }
     project.approved = True
     project.approved_version = version_id
     project.save()

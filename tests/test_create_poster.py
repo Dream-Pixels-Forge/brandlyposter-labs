@@ -145,3 +145,17 @@ class TestCreatePoster:
         assert plan["tagline"] == "Boss by day. Hopeless romantic by night."
         assert plan["genre"] == "romcom"
         assert plan["resolution"] == "2:3"
+
+    def test_create_poster_missing_subject_graceful(self):
+        """Missing subject must not crash create_poster."""
+        from server import brandly_create_poster
+
+        result = brandly_create_poster(
+            subject_id="definitely-not-a-subject",
+            genre="thriller",
+            title="TEST",
+        )
+
+        assert result["pass"] is False or "error" in result
+        assert "subject_id" in result
+        assert result["subject_id"] == "definitely-not-a-subject"

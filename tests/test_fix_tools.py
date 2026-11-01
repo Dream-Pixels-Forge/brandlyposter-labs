@@ -111,6 +111,28 @@ class TestScanIssues:
             assert 'severity' in frame
             assert len(frame['bbox']) == 4  # x, y, w, h
 
+    def test_scan_issues_missing_subject_records_likeness_fail(self, test_poster):
+        """Missing subject must not crash; likeness recorded as pass=False (not silently dropped)."""
+        from server import brandly_scan_issues
+
+        result = brandly_scan_issues(test_poster, subject_id="definitely-not-a-subject")
+
+        issues = result['issues']
+        assert 'likeness' in issues, "likeness check must not be silently dropped for missing subject"
+        assert issues['likeness']['pass'] is False
+        assert 'reason' in issues['likeness']
+
+    def test_detect_issues_missing_subject_records_likeness_fail(self, test_poster):
+        """detect_issues_with_visualization with missing subject: likeness pass=False, no silent drop."""
+        from server import detect_issues_with_visualization
+
+        result = detect_issues_with_visualization(test_poster, subject_id="definitely-not-a-subject")
+
+        issues = result['issues']
+        assert 'likeness' in issues, "likeness check must not be silently dropped for missing subject"
+        assert issues['likeness']['pass'] is False
+        assert 'reason' in issues['likeness']
+
     def test_scan_with_animation_frames(self, test_poster):
         """Test scan_issues with create_animation=True creates animation frames."""
         from server import brandly_scan_issues

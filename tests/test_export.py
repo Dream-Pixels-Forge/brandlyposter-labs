@@ -95,3 +95,16 @@ class TestExport:
 
         # Cleanup
         shutil.rmtree(test_project_dir)
+
+    def test_batch_export_missing_project_graceful(self):
+        """Missing project must not crash batch_export."""
+        from server import brandly_batch_export
+
+        result = brandly_batch_export(
+            project_id="definitely-not-a-project",
+            formats=["deck"],
+        )
+
+        assert result["pass"] is False or "error" in result
+        assert "project_id" in result
+        assert result["project_id"] == "definitely-not-a-project"

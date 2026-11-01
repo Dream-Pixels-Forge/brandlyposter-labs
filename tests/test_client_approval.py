@@ -79,3 +79,25 @@ class TestClientApproval:
         project = ProjectManifest.load(test_project)
         assert project.approved is True
         assert project.approved_version == "v1"
+
+    def test_share_review_missing_project_graceful(self):
+        """Missing project must not crash share_review."""
+        from server import brandly_share_review
+
+        result = brandly_share_review("definitely-not-a-project")
+
+        assert result["pass"] is False or "error" in result
+        assert "project_id" in result
+
+    def test_approve_version_missing_project_graceful(self):
+        """Missing project must not crash approve_version."""
+        from server import brandly_approve_version
+
+        result = brandly_approve_version(
+            project_id="definitely-not-a-project",
+            version_id="v1",
+            client_signature="x",
+        )
+
+        assert result["pass"] is False or "error" in result
+        assert "project_id" in result
