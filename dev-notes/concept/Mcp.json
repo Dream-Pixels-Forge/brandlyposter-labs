@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "brandlyposter-labs": {
+      "command": "python",
+      "args": [
+        "/mnt/data/brandlyposter-labs-mcp/server.py"
+      ],
+      "description": "BrandlyPoster-Labs - Systematic poster studio with earring fix QA"
+    }
+  }
+}

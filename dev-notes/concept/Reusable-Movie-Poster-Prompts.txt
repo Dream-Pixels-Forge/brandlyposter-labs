@@ -1,0 +1,70 @@
+
+# REUSABLE MOVIE POSTER PROMPT SYSTEM
+# Based on your L'ÉTOILE poster
+
+--- MASTER TEMPLATE (Fill the brackets) ---
+
+Create an iconic movie poster featuring this exact person as the star, preserve exact likeness, face, skin tone, [HAIR DESCRIPTION], and expression. Use the reference image.
+
+FIXES: Ensure [DETAIL TO FIX - e.g. both small gold hoop earrings symmetrical in BOTH ears, both visible, identical].
+
+CONCEPT: Wide shot composite, genre: [GENRE - e.g. Prestige Drama / Power Thriller], story: [LIFE/CAREER STORY - e.g. visionary leader from Kinshasa who built her own empire]. 
+
+COMPOSITION: Cinematic wide shot, person in center full-body, wearing [OUTFIT - e.g. cream linen blazer, dark wide-leg trousers, brown belt, brown boots], standing powerfully, looking at camera. Background composite blending [BACKGROUND 1 - e.g. Kinshasa skyline at golden hour with Congo River], [BACKGROUND 2 - e.g. modern boardroom with charts], [BACKGROUND 3 - e.g. fashion runway with mannequins].
+
+STYLE: Epic, high-end Hollywood theatrical poster, dramatic lighting, film grain, volumetric light, ultra-detailed, 8K.
+
+TEXT: Large title at top: '[MOVIE TITLE]' and subtitle '[SUBTITLE]'. Tagline at bottom: '[TAGLINE]'. Add realistic billing block at very bottom with 'COMING [DATE] #[HASHTAG]'.
+
+FORMAT: Vertical 24x36 theatrical one-sheet, no cropping of feet, both earrings must be present.
+
+--- HOW WE FILLED IT FOR YOU ---
+
+[HAIR] = short twisted natural hair
+[DETAIL TO FIX] = both small gold hoop earrings in BOTH ears
+[GENRE] = Prestige Drama / Power Thriller
+[STORY] = life/career as a visionary leader from Kinshasa
+[OUTFIT] = cream linen blazer, dark wide-leg trousers, brown belt, brown boots
+[BACKGROUND 1] = Kinshasa skyline at golden hour
+[BACKGROUND 2] = boardroom with charts and glass table
+[BACKGROUND 3] = fashion runway
+[TITLE] = L'ÉTOILE
+[SUBTITLE] = THE ASCENT
+[TAGLINE] = She built her own empire.
+
+--- 5 READY-TO-USE GENRE VARIATIONS (Just swap the reference image) ---
+
+1. THRILLER / ENTREPRENEUR (Your version):
+Genre: Prestige Drama Thriller. Background: Kinshasa skyline + boardroom + runway. Title: L'ÉTOILE. Tagline: She built her own empire.
+
+2. SCI-FI EPIC:
+Genre: African Futurism Sci-Fi Epic. Background: futuristic Kinshasa 2045 with flying vehicles, holographic screens, space launch. Outfit keep same but add long coat. Title: MBOKA 2045. Tagline: The future started with her.
+
+3. NOLLYWOOD ROM-COM:
+Genre: Romantic Comedy. Background: vibrant Kinshasa market, rooftop dinner, laughing friends. Warm, colorful lighting. Title: LOVE IN KIN. Tagline: Boss by day. Hopeless romantic by night.
+
+4. ACTION HERO:
+Genre: Spy Action. Background: city chase, helicopter, secret base. Pose: more dynamic, coat flowing. Title: THE OPERATIVE. Tagline: No one saw her coming.
+
+5. FASHION DOCUMENTARY:
+Genre: Fashion Documentary / Biopic. Background: atelier sketches, fabric rolls, Paris Fashion Week crowd. Title: ATELIER. Tagline: Stitched with purpose.
+
+--- MICRO-PROMPT FOR FIXING EARRING / CAST-SHEET ISSUES ---
+
+Use this BEFORE the poster if the source has artifacts:
+
+"Fix this cast-sheet: preserve exact likeness, face, and outfit. Ensure symmetrical small gold hoop earrings in BOTH ears, identical size and position. Clean studio background #E5E5E5, even lighting, no shadows on face, sharp focus. Full-body left panel and close-up headshot right panel, with thin white divider. Professional casting sheet, no distortion."
+
+--- NEGATIVE / DO-NOT LIST (add to any tool that supports it) ---
+
+Do not: change face shape, change skin tone, add extra fingers, crop feet, make earrings mismatched, make only one earring, add text distortion, blurry background, cartoon style.
+
+--- HOW TO USE IN DIFFERENT TOOLS ---
+
+Meta AI / My image_gen: [Text + Image + Text] format as we did. Always put reference image between instructions.
+
+Midjourney: Upload image, then paste template with --cref [image_url] --cw 90 --ar 2:3 --style raw
+
+Stable Diffusion: Use IP-Adapter with your photo + master template.
+
+For clients: Keep [FIXES] and [FORMAT] sections always the same - that's your quality control. Only change GENRE, STORY, BACKGROUND, TITLE.
