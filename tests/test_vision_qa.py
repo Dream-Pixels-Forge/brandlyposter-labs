@@ -1,12 +1,13 @@
 """Tests for vision QA: 6-point check."""
-import pytest
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
+import pytest
 
 
 def _create_test_poster(path: Path, size=(1024, 1536)):  # 2:3 ratio
     """Create a test poster image with some content."""
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw
     img = Image.new('RGB', size, color=(20, 20, 30))
     draw = ImageDraw.Draw(img)
 
@@ -42,7 +43,7 @@ class TestVisionQA:
     @pytest.fixture
     def subject_with_embedding(self, test_poster):
         """Create a subject with face embedding from the test poster."""
-        from server import brandly_subject_save, SubjectProfile
+        from server import brandly_subject_save
 
         brandly_subject_save(
             subject_id="test-qa-subject",
@@ -93,7 +94,7 @@ class TestVisionQA:
 
     def test_qa_check_ratio_2_3_fails_wrong_ratio(self):
         """Test 2:3 ratio check fails for wrong ratio."""
-        from server import brandly_qa_check, brandly_qa_check
+        from server import brandly_qa_check
 
         # Create image with wrong ratio (square)
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:

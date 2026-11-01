@@ -1,5 +1,4 @@
 """Tests for animation tools."""
-import pytest
 
 
 class TestAnimation:

@@ -1,8 +1,7 @@
 """Tests for client approval tools."""
-import pytest
-from pathlib import Path
-import tempfile
 import shutil
+
+import pytest
 
 
 class TestClientApproval:
@@ -11,7 +10,7 @@ class TestClientApproval:
     @pytest.fixture
     def test_project(self):
         """Create a test project with manifest."""
-        from server import ProjectManifest, PROJECTS_DIR
+        from server import PROJECTS_DIR, ProjectManifest
 
         # Clean up any existing
         test_dir = PROJECTS_DIR / "test-approval"
@@ -63,7 +62,7 @@ class TestClientApproval:
 
     def test_approve_version_locks_project(self, test_project):
         """Test brandly_approve_version locks project."""
-        from server import brandly_approve_version, ProjectManifest
+        from server import ProjectManifest, brandly_approve_version
 
         result = brandly_approve_version(
             project_id=test_project,
@@ -79,3 +78,25 @@ class TestClientApproval:
         project = ProjectManifest.load(test_project)
         assert project.approved is True
         assert project.approved_version == "v1"
+
+    def test_share_review_missing_project_graceful(self):
+        """Missing project must not crash share_review."""
+        from server import brandly_share_review
+
+        result = brandly_share_review("definitely-not-a-project")
+
+        assert result["pass"] is False or "error" in result
+        assert "project_id" in result
+
+    def test_approve_version_missing_project_graceful(self):
+        """Missing project must not crash approve_version."""
+        from server import brandly_approve_version
+
+        result = brandly_approve_version(
+            project_id="definitely-not-a-project",
+            version_id="v1",
+            client_signature="x",
+        )
+
+        assert result["pass"] is False or "error" in result
+        assert "project_id" in result

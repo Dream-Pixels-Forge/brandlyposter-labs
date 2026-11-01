@@ -1,8 +1,8 @@
 """Tests for comprehensive fix tools and scan issues."""
-import pytest
-from pathlib import Path
 import tempfile
-import shutil
+from pathlib import Path
+
+import pytest
 
 
 def _create_test_poster(path: Path, size=(1024, 1536)):
@@ -111,6 +111,28 @@ class TestScanIssues:
             assert 'severity' in frame
             assert len(frame['bbox']) == 4  # x, y, w, h
 
+    def test_scan_issues_missing_subject_records_likeness_fail(self, test_poster):
+        """Missing subject must not crash; likeness recorded as pass=False (not silently dropped)."""
+        from server import brandly_scan_issues
+
+        result = brandly_scan_issues(test_poster, subject_id="definitely-not-a-subject")
+
+        issues = result['issues']
+        assert 'likeness' in issues, "likeness check must not be silently dropped for missing subject"
+        assert issues['likeness']['pass'] is False
+        assert 'reason' in issues['likeness']
+
+    def test_detect_issues_missing_subject_records_likeness_fail(self, test_poster):
+        """detect_issues_with_visualization with missing subject: likeness pass=False, no silent drop."""
+        from server import detect_issues_with_visualization
+
+        result = detect_issues_with_visualization(test_poster, subject_id="definitely-not-a-subject")
+
+        issues = result['issues']
+        assert 'likeness' in issues, "likeness check must not be silently dropped for missing subject"
+        assert issues['likeness']['pass'] is False
+        assert 'reason' in issues['likeness']
+
     def test_scan_with_animation_frames(self, test_poster):
         """Test scan_issues with create_animation=True creates animation frames."""
         from server import brandly_scan_issues
@@ -133,8 +155,9 @@ class TestFixEarringsPrompt:
 
     def test_fix_earrings_prompt_ok_when_symmetrical(self):
         """Test fix_earrings_prompt returns ok when earrings are symmetrical."""
-        from server import brandly_fix_earrings_prompt
         from PIL import Image, ImageDraw
+
+        from server import brandly_fix_earrings_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -156,8 +179,9 @@ class TestFixEarringsPrompt:
 
     def test_fix_earrings_prompt_fix_needed_when_asymmetrical(self):
         """Test fix_earrings_prompt returns fix when earrings are asymmetrical."""
-        from server import brandly_fix_earrings_prompt
         from PIL import Image, ImageDraw
+
+        from server import brandly_fix_earrings_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -185,8 +209,9 @@ class TestFixWardrobePrompt:
 
     def test_fix_wardrobe_prompt_returns_structure(self):
         """Test fix_wardrobe_prompt returns expected structure."""
-        from server import brandly_fix_wardrobe_prompt
         from PIL import Image
+
+        from server import brandly_fix_wardrobe_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -211,8 +236,9 @@ class TestFixPropsPrompt:
 
     def test_fix_props_prompt_returns_structure(self):
         """Test fix_props_prompt returns expected structure."""
-        from server import brandly_fix_props_prompt
         from PIL import Image
+
+        from server import brandly_fix_props_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -237,8 +263,9 @@ class TestFixBackgroundPrompt:
 
     def test_fix_background_prompt_returns_genre_config(self):
         """Test fix_background_prompt returns genre-specific config."""
-        from server import brandly_fix_background_prompt
         from PIL import Image
+
+        from server import brandly_fix_background_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -263,8 +290,9 @@ class TestFixLightingPrompt:
 
     def test_fix_lighting_prompt_returns_balance_score(self):
         """Test fix_lighting_prompt returns balance score."""
-        from server import brandly_fix_lighting_prompt
         from PIL import Image
+
+        from server import brandly_fix_lighting_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -286,8 +314,9 @@ class TestFixCompositionPrompt:
 
     def test_fix_composition_prompt_ok_for_correct_ratio(self):
         """Test fix_composition_prompt returns ok for correct 2:3 ratio."""
-        from server import brandly_fix_composition_prompt
         from PIL import Image
+
+        from server import brandly_fix_composition_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -304,8 +333,9 @@ class TestFixCompositionPrompt:
 
     def test_fix_composition_prompt_fix_needed_for_wrong_ratio(self):
         """Test fix_composition_prompt returns fix for wrong ratio."""
-        from server import brandly_fix_composition_prompt
         from PIL import Image
+
+        from server import brandly_fix_composition_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)

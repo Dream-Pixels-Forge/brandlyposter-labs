@@ -1,7 +1,6 @@
 """Tests for earring symmetry check."""
-import pytest
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 
 def _create_image_with_earrings(path: Path, symmetrical=True):

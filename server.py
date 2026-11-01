@@ -7,20 +7,18 @@ Multi-agent poster studio with subject vault, vision QA, batch export, client ap
 import json
 import os
 import uuid
-import base64
-import hashlib
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime, timezone
-from dataclasses import dataclass, asdict, field
+from typing import Any
 
-from mcp.server.fastmcp import FastMCP
-from PIL import Image
-import torch
-from transformers import CLIPProcessor, CLIPModel
-from sentence_transformers import SentenceTransformer
 import cv2
 import numpy as np
+import torch
+from mcp.server.fastmcp import FastMCP
+from PIL import Image
+from sentence_transformers import SentenceTransformer
+from transformers import CLIPModel, CLIPProcessor
 
 # ============================================================================
 # CONFIGURATION & PATHS
@@ -86,13 +84,13 @@ def get_sbert():
 class SubjectProfile:
     subject_id: str
     name: str
-    reference_images: List[str]
-    face_embedding: Optional[List[float]] = None
+    reference_images: list[str]
+    face_embedding: list[float] | None = None
     likeness_threshold: float = LIKENESS_THRESHOLD
-    earring_baseline: Optional[Dict[str, Any]] = None
+    earring_baseline: dict[str, Any] | None = None
     story: str = ""
     outfit: str = ""
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self):
         return asdict(self)
@@ -123,10 +121,10 @@ class ProjectManifest:
     master_prompt: str
     qa_score: str = "0/6"
     qa_passed: bool = False
-    variants: List[Dict[str, Any]] = field(default_factory=list)
+    variants: list[dict[str, Any]] = field(default_factory=list)
     approved: bool = False
-    approved_version: Optional[str] = None
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    approved_version: str | None = None
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self):
         return asdict(self)
@@ -152,10 +150,18 @@ class ProjectManifest:
 # VISION UTILITIES
 # ============================================================================
 
-def compute_face_embedding(image_path: str) -> List[float]:
-    """Extract face embedding using CLIP image encoder."""
+def compute_face_embedding(image_path: str) -> list[float]:
+    """Extract face embedding using CLIP image encoder.
+
+    Missing or unreadable images return an empty embedding instead of
+    raising, so callers (subject match, vision QA) degrade gracefully
+    to similarity 0.0 / pass=False.
+    """
     model, processor = get_clip()
-    image = Image.open(image_path).convert("RGB")
+    try:
+        image = Image.open(image_path).convert("RGB")
+    except (FileNotFoundError, OSError):
+        return []
     inputs = processor(images=image, return_tensors="pt")
     with torch.no_grad():
         outputs = model.get_image_features(**inputs)
@@ -165,14 +171,23 @@ def compute_face_embedding(image_path: str) -> List[float]:
     return image_features.squeeze().tolist()
 
 
-def compute_similarity(emb1: List[float], emb2: List[float]) -> float:
-    """Cosine similarity between two embeddings."""
-    a = np.array(emb1)
-    b = np.array(emb2)
-    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+def compute_similarity(emb1: list[float], emb2: list[float]) -> float:
+    """Cosine similarity between two embeddings.
+
+    Zero-length or empty vectors return 0.0 instead of nan so callers
+    (subject match, vision QA, scan issues) never emit a non-JSON-safe
+    similarity value.
+    """
+    a = np.array(emb1, dtype=float)
+    b = np.array(emb2, dtype=float)
+    na = float(np.linalg.norm(a))
+    nb = float(np.linalg.norm(b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return float(np.dot(a, b) / (na * nb))
 
 
-def detect_gold_hoop_earrings(image_path: str) -> Dict[str, Any]:
+def detect_gold_hoop_earrings(image_path: str) -> dict[str, Any]:
     """
     Pixel-level detection of gold hoop earrings.
     Returns: {pass, left_ear, right_ear, offset_delta_px, symmetrical}
@@ -180,8 +195,6 @@ def detect_gold_hoop_earrings(image_path: str) -> Dict[str, Any]:
     img = cv2.imread(image_path)
     if img is None:
         return {"pass": False, "error": "Could not read image"}
-
-    h, w = img.shape[:2]
 
     # Convert to HSV for gold detection
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -215,7 +228,6 @@ def detect_gold_hoop_earrings(image_path: str) -> Dict[str, Any]:
     # Check symmetry: similar radius, vertically aligned
     radius_delta = abs(left_ear["radius"] - right_ear["radius"])
     y_delta = abs(left_ear["y"] - right_ear["y"])
-    x_center = (left_ear["x"] + right_ear["x"]) / 2
 
     symmetrical = (radius_delta < 5.0 and y_delta < 10.0)
 
@@ -235,7 +247,7 @@ def check_no_cropped_hands_feet(image_path: str) -> bool:
     img = cv2.imread(image_path)
     if img is None:
         return False
-    h, w = img.shape[:2]
+    h, _w = img.shape[:2]
     # Check bottom 10% for skin tones or non-background pixels
     bottom = img[int(h * 0.9):, :]
     # Simple heuristic: if bottom region is mostly dark/background, likely cropped
@@ -264,7 +276,7 @@ def check_text_legible(image_path: str) -> bool:
     img = cv2.imread(image_path)
     if img is None:
         return False
-    h, w = img.shape[:2]
+    h, _w = img.shape[:2]
     # Check top 15% for title text (high contrast)
     top = img[:int(h * 0.15), :]
     gray = cv2.cvtColor(top, cv2.COLOR_BGR2GRAY)
@@ -288,7 +300,7 @@ def check_ratio_2_3(image_path: str) -> bool:
 # ============================================================================
 
 
-def detect_issues_with_visualization(image_path: str, subject_id: Optional[str] = None) -> Dict[str, Any]:
+def detect_issues_with_visualization(image_path: str, subject_id: str | None = None) -> dict[str, Any]:
     """
     Run full issue detection and return visualization data for scan animation.
     Returns: {
@@ -355,8 +367,13 @@ def detect_issues_with_visualization(image_path: str, subject_id: Optional[str] 
                     })
                 else:
                     scan_frames.append({'region': 'face', 'bbox': [int(w*0.25), int(h*0.15), int(w*0.5), int(h*0.4)], 'issue': 'ok', 'severity': 'none'})
-        except:
-            pass
+        except FileNotFoundError:
+            issues['likeness'] = {
+                'pass': False,
+                'reason': f'Subject {subject_id} not found',
+                'score': 0.0,
+                'threshold': LIKENESS_THRESHOLD,
+            }
     
     # 3. Cropping check - bottom region
     cropped = not check_no_cropped_hands_feet(image_path)
@@ -420,15 +437,11 @@ def detect_issues_with_visualization(image_path: str, subject_id: Optional[str] 
         scan_frames.append({'region': 'wardrobe', 'bbox': [int(w*0.3), int(h*0.4), int(w*0.4), int(h*0.35)], 'issue': 'ok', 'severity': 'none', 'note': 'Wardrobe region - verify outfit matches prompt'})
     
     # 8. Props/hands check (side regions)
-    left_side = img[int(h*0.4):int(h*0.7), :int(w*0.2)]
-    right_side = img[int(h*0.4):int(h*0.7), int(w*0.8):]
     issues['props'] = {'pass': True, 'note': 'Side regions checked for props/hands - manual verification recommended'}
     scan_frames.append({'region': 'left_hand', 'bbox': [0, int(h*0.4), int(w*0.2), int(h*0.3)], 'issue': 'ok', 'severity': 'none', 'note': 'Left hand/prop region'})
     scan_frames.append({'region': 'right_hand', 'bbox': [int(w*0.8), int(h*0.4), int(w*0.2), int(h*0.3)], 'issue': 'ok', 'severity': 'none', 'note': 'Right hand/prop region'})
     
     # 9. Background consistency
-    bg_top = img[:int(h*0.2), :]
-    bg_bottom = img[int(h*0.8):, :]
     issues['background'] = {'pass': True, 'note': 'Background regions analyzed - verify matches genre palette'}
     scan_frames.append({'region': 'background_top', 'bbox': [0, 0, w, int(h*0.2)], 'issue': 'ok', 'severity': 'none', 'note': 'Background top - verify genre palette'})
     scan_frames.append({'region': 'background_bottom', 'bbox': [0, int(h*0.8), w, int(h*0.2)], 'issue': 'ok', 'severity': 'none', 'note': 'Background bottom - verify genre palette'})
@@ -468,18 +481,18 @@ def detect_issues_with_visualization(image_path: str, subject_id: Optional[str] 
         'scan_frames': scan_frames,
         'annotated_image_path': annotated_path,
         'summary': {
-            'total_checks': len([k for k in issues.keys() if isinstance(issues[k], dict) and 'pass' in issues[k]]),
-            'passed': len([k for k in issues.keys() if isinstance(issues[k], dict) and issues[k].get('pass', False)]),
-            'failed': len([k for k in issues.keys() if isinstance(issues[k], dict) and not issues[k].get('pass', True)]),
-            'critical': len([k for k in issues.keys() if isinstance(issues[k], dict) and issues[k].get('severity') == 'critical']),
-            'high': len([k for k in issues.keys() if isinstance(issues[k], dict) and issues[k].get('severity') == 'high']),
-            'medium': len([k for k in issues.keys() if isinstance(issues[k], dict) and issues[k].get('severity') == 'medium']),
-            'low': len([k for k in issues.keys() if isinstance(issues[k], dict) and issues[k].get('severity') == 'low']),
+            'total_checks': len([k for k in issues if isinstance(issues[k], dict) and 'pass' in issues[k]]),
+            'passed': len([k for k in issues if isinstance(issues[k], dict) and issues[k].get('pass', False)]),
+            'failed': len([k for k in issues if isinstance(issues[k], dict) and not issues[k].get('pass', True)]),
+            'critical': len([k for k in issues if isinstance(issues[k], dict) and issues[k].get('severity') == 'critical']),
+            'high': len([k for k in issues if isinstance(issues[k], dict) and issues[k].get('severity') == 'high']),
+            'medium': len([k for k in issues if isinstance(issues[k], dict) and issues[k].get('severity') == 'medium']),
+            'low': len([k for k in issues if isinstance(issues[k], dict) and issues[k].get('severity') == 'low']),
         }
     }
 
 
-def generate_fix_prompt_from_issues(issues: Dict[str, Any], base_prompt: str = '') -> str:
+def generate_fix_prompt_from_issues(issues: dict[str, Any], base_prompt: str = '') -> str:
     """Generate a comprehensive fix prompt from detected issues."""
     fix_parts = []
     for category, data in issues.items():
@@ -494,7 +507,7 @@ def generate_fix_prompt_from_issues(issues: Dict[str, Any], base_prompt: str = '
     return base_prompt
 
 
-def create_scan_animation_frames(image_path: str, scan_frames: List[Dict], output_dir: str, frame_duration: int = 500) -> List[str]:
+def create_scan_animation_frames(image_path: str, scan_frames: list[dict], output_dir: str, frame_duration: int = 500) -> list[str]:
     """Create scan animation frames highlighting each issue region."""
     import os
     os.makedirs(output_dir, exist_ok=True)
@@ -534,7 +547,7 @@ def create_scan_animation_frames(image_path: str, scan_frames: List[Dict], outpu
 # VISION QA: 6-POINT CHECK
 # ============================================================================
 
-def run_vision_qa(image_path: str, subject_id: Optional[str] = None) -> Dict[str, Any]:
+def run_vision_qa(image_path: str, subject_id: str | None = None) -> dict[str, Any]:
     """Run all 6 QA checks on a generated poster image."""
     checks = {}
 
@@ -552,7 +565,7 @@ def run_vision_qa(image_path: str, subject_id: Optional[str] = None) -> Dict[str
                 }
             else:
                 checks["likeness_preserved"] = {"pass": False, "reason": "No face embedding in subject"}
-        except Exception as e:
+        except (FileNotFoundError, OSError, ValueError) as e:
             checks["likeness_preserved"] = {"pass": False, "reason": str(e)}
     else:
         checks["likeness_preserved"] = {"pass": True, "note": "No subject_id provided, skipped"}
@@ -597,7 +610,7 @@ def build_master_prompt(
     subtitle: str,
     tagline: str,
     story: str = "",
-    outfit: Optional[str] = None,
+    outfit: str | None = None,
     fix_earrings: bool = True,
     resolution: str = "2:3",
 ) -> str:
@@ -689,7 +702,16 @@ def brandly_subject_save(
 @mcp.tool()
 def brandly_subject_match(generated_image_path: str, subject_id: str) -> dict:
     """Match generated image against subject vault — returns similarity score."""
-    subject = SubjectProfile.load(subject_id)
+    try:
+        subject = SubjectProfile.load(subject_id)
+    except FileNotFoundError:
+        return {
+            "subject_id": subject_id,
+            "similarity": 0.0,
+            "pass": False,
+            "reason": f"Subject {subject_id} not found",
+            "threshold": LIKENESS_THRESHOLD,
+        }
     if not subject.face_embedding:
         return {"pass": False, "reason": "Subject has no face embedding"}
 
@@ -728,7 +750,14 @@ def brandly_create_poster(
     resolution: str = "2:3",
 ) -> dict:
     """Create base poster with master prompt and variant plan."""
-    subject = SubjectProfile.load(subject_id)
+    try:
+        subject = SubjectProfile.load(subject_id)
+    except FileNotFoundError:
+        return {
+            "subject_id": subject_id,
+            "pass": False,
+            "error": f"Subject {subject_id} not found",
+        }
 
     # Use subject's story/outfit if not overridden
     effective_story = story or subject.story
@@ -853,13 +882,13 @@ def brandly_add_text_layer(
 @mcp.tool()
 def brandly_set_text_style(
     layer_id: str,
-    font: str = None,
-    size: int = None,
-    color: str = None,
-    tracking: float = None,
-    leading: float = None,
-    weight: str = None,
-    style: str = None,
+    font: str | None = None,
+    size: int | None = None,
+    color: str | None = None,
+    tracking: float | None = None,
+    leading: float | None = None,
+    weight: str | None = None,
+    style: str | None = None,
 ) -> dict:
     return {"action": "update_style", "layer_id": layer_id, "font": font, "size": size, "color": color, "tracking": tracking, "leading": leading, "weight": weight, "style": style}
 
@@ -892,7 +921,7 @@ def brandly_place_element(
 
 @mcp.tool()
 def brandly_distribute_layers(
-    layer_ids: List[str],
+    layer_ids: list[str],
     direction: str = "horizontal",
     spacing: int = 20,
     alignment: str = "center",
@@ -950,7 +979,7 @@ def brandly_set_lighting(
 
 @mcp.tool()
 def brandly_set_color_palette(
-    palette: List[str],
+    palette: list[str],
     grading: str = "cinematic",
     intensity: float = 0.8,
 ) -> dict:
@@ -982,7 +1011,7 @@ def brandly_animate_poster(
 @mcp.tool()
 def brandly_set_animation_keyframes(
     layer_id: str,
-    keyframes: List[Dict[str, Any]],
+    keyframes: list[dict[str, Any]],
 ) -> dict:
     return {"layer_id": layer_id, "keyframes": keyframes}
 
@@ -1003,14 +1032,14 @@ def brandly_export_animation(
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def brandly_qa_check(image_path: str, subject_id: Optional[str] = None) -> dict:
+def brandly_qa_check(image_path: str, subject_id: str | None = None) -> dict:
     """Run vision-backed quality assurance: 6-point check."""
     result = run_vision_qa(image_path, subject_id)
     return result
 
 
 @mcp.tool()
-def brandly_scan_issues(image_path: str, subject_id: Optional[str] = None, create_animation: bool = False, animation_output_dir: str = "") -> dict:
+def brandly_scan_issues(image_path: str, subject_id: str | None = None, create_animation: bool = False, animation_output_dir: str = "") -> dict:
     """
     Comprehensive issue detection with scan animation frames.
     Detects: earrings, likeness, cropping, ratio, eye sharpness, text, wardrobe, props, background, lighting, artifacts.
@@ -1024,8 +1053,8 @@ def brandly_scan_issues(image_path: str, subject_id: Optional[str] = None, creat
         try:
             subject = SubjectProfile.load(subject_id)
             base_prompt = f"Poster for {subject.name}, genre preset"
-        except:
-            pass
+        except FileNotFoundError:
+            base_prompt = f"Poster for {subject_id} (subject not found)"
     
     fix_prompt = generate_fix_prompt_from_issues(result['issues'], base_prompt)
     
@@ -1048,7 +1077,7 @@ def brandly_scan_issues(image_path: str, subject_id: Optional[str] = None, creat
 
 
 @mcp.tool()
-def brandly_fix_earrings_prompt(image_path: str, subject_id: Optional[str] = None) -> dict:
+def brandly_fix_earrings_prompt(image_path: str, subject_id: str | None = None) -> dict:
     """Generate specific fix prompt for earring symmetry issues."""
     result = detect_gold_hoop_earrings(image_path)
     if result.get('symmetrical', False):
@@ -1065,14 +1094,11 @@ def brandly_fix_earrings_prompt(image_path: str, subject_id: Optional[str] = Non
 
 
 @mcp.tool()
-def brandly_fix_wardrobe_prompt(image_path: str, expected_outfit: str = '', subject_id: Optional[str] = None) -> dict:
+def brandly_fix_wardrobe_prompt(image_path: str, expected_outfit: str = '', subject_id: str | None = None) -> dict:
     """Generate fix prompt for wardrobe/outfit issues."""
     img = cv2.imread(image_path)
     if img is None:
         return {'error': 'Could not read image'}
-    
-    h, w = img.shape[:2]
-    torso = img[int(h*0.4):int(h*0.75), int(w*0.3):int(w*0.7)]
     
     outfit_desc = expected_outfit if expected_outfit else "the specified outfit from prompt"
     fix = f'WARDROBE FIX: Ensure subject wears exactly: {outfit_desc}. Match fabric, color, cut, and fit precisely. No wardrobe substitutions.'
@@ -1087,7 +1113,7 @@ def brandly_fix_wardrobe_prompt(image_path: str, expected_outfit: str = '', subj
 
 
 @mcp.tool()
-def brandly_fix_props_prompt(image_path: str, expected_props: List[str] = None) -> dict:
+def brandly_fix_props_prompt(image_path: str, expected_props: list[str] | None = None) -> dict:
     """Generate fix prompt for props/hands issues."""
     if expected_props is None:
         expected_props = []
@@ -1133,7 +1159,7 @@ def brandly_fix_lighting_prompt(image_path: str) -> dict:
         return {'error': 'Could not read image'}
     
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape
+    _h, w = gray.shape
     left_mean = np.mean(gray[:, :w//2])
     right_mean = np.mean(gray[:, w//2:])
     balance = abs(left_mean - right_mean)
@@ -1179,7 +1205,7 @@ def brandly_fix_composition_prompt(image_path: str) -> dict:
 
 
 @mcp.tool()
-def brandly_generate_master_fix_prompt(image_path: str, subject_id: Optional[str] = None, genre: str = 'thriller', expected_outfit: str = '', expected_props: List[str] = None) -> dict:
+def brandly_generate_master_fix_prompt(image_path: str, subject_id: str | None = None, genre: str = 'thriller', expected_outfit: str = '', expected_props: list[str] | None = None) -> dict:
     """Generate comprehensive master fix prompt combining all detected issues."""
     if expected_props is None:
         expected_props = []
@@ -1233,14 +1259,22 @@ def brandly_export_specs(format: str = "theatrical") -> dict:
 @mcp.tool()
 def brandly_batch_export(
     project_id: str,
-    formats: List[str] = None,
+    formats: list[str] | None = None,
     generated_image_path: str = "",
 ) -> dict:
     """Export poster in all requested formats; write manifest."""
     if formats is None:
         formats = ["theatrical", "deck", "social", "story"]
 
-    project = ProjectManifest.load(project_id)
+    try:
+        project = ProjectManifest.load(project_id)
+    except FileNotFoundError:
+        return {
+            "project_id": project_id,
+            "pass": False,
+            "error": f"Project {project_id} not found",
+            "variants": [],
+        }
 
     project_dir = PROJECTS_DIR / project_id
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -1271,7 +1305,15 @@ def brandly_batch_export(
 @mcp.tool()
 def brandly_share_review(project_id: str) -> dict:
     """Generate a shareable review URL (stub - in real app would serve static HTML)."""
-    project = ProjectManifest.load(project_id)
+    try:
+        ProjectManifest.load(project_id)
+    except FileNotFoundError:
+        return {
+            "project_id": project_id,
+            "pass": False,
+            "error": f"Project {project_id} not found",
+            "review_url": None,
+        }
     review_id = str(uuid.uuid4())[:8]
     # In production, would generate static HTML at /mnt/data/.../review_<id>.html
     review_url = f"file://{PROJECTS_DIR}/{project_id}/review_{review_id}.html"
@@ -1298,7 +1340,15 @@ def brandly_compare_versions(variant_a_path: str, variant_b_path: str) -> dict:
 @mcp.tool()
 def brandly_approve_version(project_id: str, version_id: str, client_signature: str = "") -> dict:
     """Lock final approved version."""
-    project = ProjectManifest.load(project_id)
+    try:
+        project = ProjectManifest.load(project_id)
+    except FileNotFoundError:
+        return {
+            "project_id": project_id,
+            "pass": False,
+            "error": f"Project {project_id} not found",
+            "locked": False,
+        }
     project.approved = True
     project.approved_version = version_id
     project.save()

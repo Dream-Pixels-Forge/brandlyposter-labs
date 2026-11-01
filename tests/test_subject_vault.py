@@ -1,8 +1,9 @@
 """Tests for subject vault: save, match, earring baseline."""
-import pytest
-from pathlib import Path
 import tempfile
-import shutil
+from pathlib import Path
+
+import pytest
+
 
 # Skip if no test image available
 def _create_test_image(path: Path, color=(128, 128, 128), size=(512, 512)):
@@ -28,7 +29,7 @@ class TestSubjectVault:
 
     def test_subject_save_creates_profile(self, test_image):
         """Test subject save creates profile with embedding."""
-        from server import brandly_subject_save, SubjectProfile, SUBJECTS_DIR
+        from server import SUBJECTS_DIR, SubjectProfile, brandly_subject_save
 
         result = brandly_subject_save(
             subject_id="test-subject-save",
@@ -56,7 +57,7 @@ class TestSubjectVault:
 
     def test_subject_match_returns_similarity(self, test_image):
         """Test subject match returns similarity score."""
-        from server import brandly_subject_save, brandly_subject_match
+        from server import brandly_subject_match, brandly_subject_save
 
         # Save subject
         brandly_subject_save(
@@ -79,7 +80,7 @@ class TestSubjectVault:
 
     def test_subject_match_below_threshold(self, test_image):
         """Test subject match fails below threshold."""
-        from server import brandly_subject_save, brandly_subject_match, SubjectProfile
+        from server import SubjectProfile, brandly_subject_match, brandly_subject_save
 
         # Save subject with high threshold
         brandly_subject_save(
@@ -112,3 +113,46 @@ class TestSubjectVault:
         assert "pass" in result
         if not result["pass"]:
             assert "reason" in result or "candidates" in result
+
+    def test_subject_match_missing_subject_graceful(self):
+        """Missing subject must not crash; returns graceful pass=False result."""
+        from server import brandly_subject_match
+
+        result = brandly_subject_match(
+            generated_image_path="/tmp/does-not-exist.png",
+            subject_id="definitely-not-a-subject",
+        )
+
+        assert result["pass"] is False
+        assert "reason" in result
+        assert "subject_id" in result
+        assert result["subject_id"] == "definitely-not-a-subject"
+
+    def test_compute_face_embedding_missing_image_returns_empty(self):
+        """Missing/invalid image must not crash; returns empty embedding."""
+        from server import compute_face_embedding
+
+        result = compute_face_embedding("/tmp/definitely-not-an-image.png")
+
+        assert result == []
+
+    def test_subject_match_missing_generated_image_graceful(self, test_image):
+        """Missing generated image must not crash subject_match; returns pass=False."""
+        from server import brandly_subject_match, brandly_subject_save
+
+        brandly_subject_save(
+            subject_id="test-subject-match-img",
+            reference_image_path=test_image,
+            name="Test Subject",
+            story="A test story",
+            outfit="Test outfit",
+        )
+
+        result = brandly_subject_match(
+            generated_image_path="/tmp/definitely-not-an-image.png",
+            subject_id="test-subject-match-img",
+        )
+
+        assert result["pass"] is False
+        assert result["similarity"] == 0.0
+        assert result["subject_id"] == "test-subject-match-img"
