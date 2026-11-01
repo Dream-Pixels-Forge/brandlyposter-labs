@@ -13,3 +13,10 @@
 - **Alternatives considered:** Full project-init with all governance artifacts (rejected — over-engineering for current ask)
 - **Impact:** Implementation phase (Phase 3) remains to be done when user requests it
 - **Decided by:** pipeline-orchestrator (ponytail mode)
+
+## 2025-11-01: Next-level direction (Phase 2 vision)
+- **Decision:** Expand beyond single MCP tool prototype into multi-agent poster studio: subject vault (identity locking), vision-backed QA (pixel-level earring symmetry + face match), batch + animated export, client approval portal
+- **Rationale:** "Push to next level" — a one-poster text-prompt tool is a toy; a studio with QA gates and client sign-off is a product
+- **Alternatives considered:** Just build the MCP server as-is (rejected — too thin; no real QA, no identity locking, no client workflow)
+- **Impact:** Raises implementation scope; next concrete deliverable is SPEC.md + TASKS.md then subject vault + vision QA first
+- **Decided by:** pipeline-orchestrator (ponytail mode)
