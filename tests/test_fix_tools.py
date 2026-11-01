@@ -1,8 +1,8 @@
 """Tests for comprehensive fix tools and scan issues."""
-import pytest
-from pathlib import Path
 import tempfile
-import shutil
+from pathlib import Path
+
+import pytest
 
 
 def _create_test_poster(path: Path, size=(1024, 1536)):
@@ -155,8 +155,9 @@ class TestFixEarringsPrompt:
 
     def test_fix_earrings_prompt_ok_when_symmetrical(self):
         """Test fix_earrings_prompt returns ok when earrings are symmetrical."""
-        from server import brandly_fix_earrings_prompt
         from PIL import Image, ImageDraw
+
+        from server import brandly_fix_earrings_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -178,8 +179,9 @@ class TestFixEarringsPrompt:
 
     def test_fix_earrings_prompt_fix_needed_when_asymmetrical(self):
         """Test fix_earrings_prompt returns fix when earrings are asymmetrical."""
-        from server import brandly_fix_earrings_prompt
         from PIL import Image, ImageDraw
+
+        from server import brandly_fix_earrings_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -207,8 +209,9 @@ class TestFixWardrobePrompt:
 
     def test_fix_wardrobe_prompt_returns_structure(self):
         """Test fix_wardrobe_prompt returns expected structure."""
-        from server import brandly_fix_wardrobe_prompt
         from PIL import Image
+
+        from server import brandly_fix_wardrobe_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -233,8 +236,9 @@ class TestFixPropsPrompt:
 
     def test_fix_props_prompt_returns_structure(self):
         """Test fix_props_prompt returns expected structure."""
-        from server import brandly_fix_props_prompt
         from PIL import Image
+
+        from server import brandly_fix_props_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -259,8 +263,9 @@ class TestFixBackgroundPrompt:
 
     def test_fix_background_prompt_returns_genre_config(self):
         """Test fix_background_prompt returns genre-specific config."""
-        from server import brandly_fix_background_prompt
         from PIL import Image
+
+        from server import brandly_fix_background_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -285,8 +290,9 @@ class TestFixLightingPrompt:
 
     def test_fix_lighting_prompt_returns_balance_score(self):
         """Test fix_lighting_prompt returns balance score."""
-        from server import brandly_fix_lighting_prompt
         from PIL import Image
+
+        from server import brandly_fix_lighting_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -308,8 +314,9 @@ class TestFixCompositionPrompt:
 
     def test_fix_composition_prompt_ok_for_correct_ratio(self):
         """Test fix_composition_prompt returns ok for correct 2:3 ratio."""
-        from server import brandly_fix_composition_prompt
         from PIL import Image
+
+        from server import brandly_fix_composition_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)
@@ -326,8 +333,9 @@ class TestFixCompositionPrompt:
 
     def test_fix_composition_prompt_fix_needed_for_wrong_ratio(self):
         """Test fix_composition_prompt returns fix for wrong ratio."""
-        from server import brandly_fix_composition_prompt
         from PIL import Image
+
+        from server import brandly_fix_composition_prompt
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             path = Path(f.name)

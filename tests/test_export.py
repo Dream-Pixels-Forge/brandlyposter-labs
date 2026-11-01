@@ -1,7 +1,4 @@
 """Tests for export specs and batch export."""
-import pytest
-from pathlib import Path
-import tempfile
 
 
 class TestExport:
@@ -50,8 +47,9 @@ class TestExport:
 
     def test_batch_export_creates_manifest(self):
         """Test batch export creates manifest with variants."""
-        from server import ProjectManifest, brandly_batch_export, PROJECTS_DIR
         import shutil
+
+        from server import PROJECTS_DIR, ProjectManifest, brandly_batch_export
 
         # Clean up any existing test project
         test_project_dir = PROJECTS_DIR / "test-batch-export"

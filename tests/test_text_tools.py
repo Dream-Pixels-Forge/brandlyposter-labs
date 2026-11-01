@@ -1,5 +1,4 @@
 """Tests for text and layout tools."""
-import pytest
 
 
 class TestTextTools:

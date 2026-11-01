@@ -1,8 +1,7 @@
 """Tests for client approval tools."""
-import pytest
-from pathlib import Path
-import tempfile
 import shutil
+
+import pytest
 
 
 class TestClientApproval:
@@ -11,7 +10,7 @@ class TestClientApproval:
     @pytest.fixture
     def test_project(self):
         """Create a test project with manifest."""
-        from server import ProjectManifest, PROJECTS_DIR
+        from server import PROJECTS_DIR, ProjectManifest
 
         # Clean up any existing
         test_dir = PROJECTS_DIR / "test-approval"
@@ -63,7 +62,7 @@ class TestClientApproval:
 
     def test_approve_version_locks_project(self, test_project):
         """Test brandly_approve_version locks project."""
-        from server import brandly_approve_version, ProjectManifest
+        from server import ProjectManifest, brandly_approve_version
 
         result = brandly_approve_version(
             project_id=test_project,

@@ -1,8 +1,7 @@
 """End-to-end integration test."""
-import pytest
-from pathlib import Path
-import tempfile
 import shutil
+import tempfile
+from pathlib import Path
 
 
 def _create_test_image(path: Path):
@@ -18,13 +17,13 @@ class TestIntegration:
     def test_full_workflow_subject_to_approval(self):
         """Test complete workflow: subject -> poster -> QA -> export -> approve."""
         from server import (
-            brandly_subject_save,
+            PROJECTS_DIR,
+            ProjectManifest,
+            brandly_approve_version,
+            brandly_batch_export,
             brandly_create_poster,
             brandly_qa_check,
-            brandly_batch_export,
-            brandly_approve_version,
-            ProjectManifest,
-            PROJECTS_DIR,
+            brandly_subject_save,
         )
 
         # Clean up

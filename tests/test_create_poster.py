@@ -1,7 +1,8 @@
 """Tests for create_poster tool."""
-import pytest
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
+import pytest
 
 
 def _create_test_image(path: Path):

@@ -4,7 +4,7 @@ import pytest
 
 def test_server_imports():
     """Test that server module imports without error."""
-    from server import mcp, GENRES, FONTS, SubjectProfile, ProjectManifest
+    from server import mcp
     assert mcp is not None
     assert hasattr(mcp, 'name')
     assert mcp.name == "BrandlyPoster-Labs Pro"
@@ -34,7 +34,7 @@ def test_fonts_loaded():
 
 def test_subject_profile_crud():
     """Test SubjectProfile save/load."""
-    from server import SubjectProfile, SUBJECTS_DIR
+    from server import SubjectProfile
 
     subject = SubjectProfile(
         subject_id="test-subject-1",
@@ -57,7 +57,7 @@ def test_subject_profile_crud():
 
 def test_project_manifest_crud():
     """Test ProjectManifest save/load."""
-    from server import ProjectManifest, PROJECTS_DIR
+    from server import ProjectManifest
 
     project = ProjectManifest(
         project_id="test-project-1",
@@ -115,8 +115,8 @@ def test_build_master_prompt():
 
 def test_compute_similarity():
     """Test cosine similarity computation."""
+
     from server import compute_similarity
-    import numpy as np
 
     # Identical vectors
     a = [1.0, 0.0, 0.0]

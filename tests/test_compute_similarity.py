@@ -3,7 +3,6 @@
 import warnings
 
 import numpy as np
-import pytest
 
 
 def test_compute_similarity_zero_vector_returns_zero_not_nan():
@@ -19,9 +18,8 @@ def test_compute_similarity_zero_vector_returns_zero_not_nan():
 
 def test_compute_similarity_happy_path_unchanged():
     """Identical/orthogonal/opposite vectors still behave as before."""
-    from server import compute_similarity
 
-    import numpy as np
+    from server import compute_similarity
 
     assert compute_similarity([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]) == 1.0
     assert abs(compute_similarity([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]) - 0.0) < 1e-6
@@ -31,6 +29,7 @@ def test_compute_similarity_happy_path_unchanged():
 def test_compute_similarity_result_is_json_safe():
     """Result must be a finite float serializable with allow_nan=False."""
     import json
+
     from server import compute_similarity
 
     s = compute_similarity([0.0] * 512, [0.0] * 512)
