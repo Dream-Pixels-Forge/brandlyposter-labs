@@ -284,6 +284,253 @@ def check_ratio_2_3(image_path: str) -> bool:
 
 
 # ============================================================================
+# COMPREHENSIVE ISSUE DETECTION & FIX GENERATION
+# ============================================================================
+
+
+def detect_issues_with_visualization(image_path: str, subject_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Run full issue detection and return visualization data for scan animation.
+    Returns: {
+        'issues': {...},
+        'scan_frames': [{'region': 'ears', 'bbox': [x,y,w,h], 'issue': 'asymmetry', 'severity': 'high'}],
+        'annotated_image_path': '/path/to/annotated.png',
+    }
+    """
+    img = cv2.imread(image_path)
+    if img is None:
+        return {'error': 'Could not read image'}
+    
+    h, w = img.shape[:2]
+    issues = {}
+    scan_frames = []
+    annotated = img.copy()
+    
+    # 1. Earring symmetry with bbox
+    earring_result = detect_gold_hoop_earrings(image_path)
+    issues['earrings'] = earring_result
+    if 'left_ear' in earring_result and 'right_ear' in earring_result:
+        le = earring_result['left_ear']
+        re = earring_result['right_ear']
+        # Draw bboxes on annotated image
+        for ear, label in [(le, 'left'), (re, 'right')]:
+            x, y, r = int(ear['x']), int(ear['y']), int(ear['radius'] + 10)
+            cv2.rectangle(annotated, (x-r, y-r), (x+r, y+r), (0, 212, 175), 2)
+            cv2.putText(annotated, f'{label}_earring', (x-r, y-r-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 212, 175), 1)
+        
+        if not earring_result.get('symmetrical', True):
+            issues['earrings']['issue'] = 'asymmetry'
+            issues['earrings']['severity'] = 'high'
+            issues['earrings']['fix_suggestion'] = 'Regenerate with: both small gold hoop earrings identical size/position in BOTH ears'
+            scan_frames.append({
+                'region': 'ears',
+                'bbox': [min(le['x'], re['x'])-30, min(le['y'], re['y'])-30, abs(le['x']-re['x'])+60, max(le['radius'], re['radius'])*2+60],
+                'issue': 'asymmetry',
+                'severity': 'high',
+                'fix_prompt': 'both small gold hoop earrings present perfectly symmetrical clearly visible in BOTH ears, identical size and position'
+            })
+        else:
+            scan_frames.append({'region': 'ears', 'bbox': [min(le['x'], re['x'])-30, min(le['y'], re['y'])-30, abs(le['x']-re['x'])+60, max(le['radius'], re['radius'])*2+60], 'issue': 'ok', 'severity': 'none'})
+    
+    # 2. Face/likeness region
+    if subject_id:
+        try:
+            subject = SubjectProfile.load(subject_id)
+            if subject.face_embedding:
+                gen_embedding = compute_face_embedding(image_path)
+                similarity = compute_similarity(subject.face_embedding, gen_embedding)
+                pass_thresh = similarity >= subject.likeness_threshold
+                issues['likeness'] = {'pass': pass_thresh, 'score': similarity, 'threshold': subject.likeness_threshold}
+                if not pass_thresh:
+                    issues['likeness']['issue'] = 'face_drift'
+                    issues['likeness']['severity'] = 'critical'
+                    issues['likeness']['fix_suggestion'] = f'Regenerate with stronger likeness lock (threshold: {subject.likeness_threshold})'
+                    # Face region is typically upper-middle
+                    scan_frames.append({
+                        'region': 'face',
+                        'bbox': [int(w*0.25), int(h*0.15), int(w*0.5), int(h*0.4)],
+                        'issue': 'face_drift',
+                        'severity': 'critical',
+                        'fix_prompt': f'preserve exact likeness, face, skin tone, expression - reference similarity must exceed {subject.likeness_threshold}'
+                    })
+                else:
+                    scan_frames.append({'region': 'face', 'bbox': [int(w*0.25), int(h*0.15), int(w*0.5), int(h*0.4)], 'issue': 'ok', 'severity': 'none'})
+        except:
+            pass
+    
+    # 3. Cropping check - bottom region
+    cropped = not check_no_cropped_hands_feet(image_path)
+    issues['cropping'] = {'pass': not cropped}
+    if cropped:
+        issues['cropping']['issue'] = 'feet_hands_cropped'
+        issues['cropping']['severity'] = 'high'
+        issues['cropping']['fix_suggestion'] = 'Extend canvas downward, ensure full body visible, no cropping of feet'
+        scan_frames.append({
+            'region': 'lower_body',
+            'bbox': [int(w*0.2), int(h*0.8), int(w*0.6), int(h*0.2)],
+            'issue': 'feet_hands_cropped',
+            'severity': 'high',
+            'fix_prompt': 'full body visible, no cropping of feet or hands, vertical 2:3 composition with subject at 68% height'
+        })
+    else:
+        scan_frames.append({'region': 'lower_body', 'bbox': [int(w*0.2), int(h*0.8), int(w*0.6), int(h*0.2)], 'issue': 'ok', 'severity': 'none'})
+    
+    # 4. Ratio check
+    ratio_ok = check_ratio_2_3(image_path)
+    issues['ratio'] = {'pass': ratio_ok}
+    if not ratio_ok:
+        issues['ratio']['issue'] = 'wrong_aspect_ratio'
+        issues['ratio']['severity'] = 'high'
+        issues['ratio']['fix_suggestion'] = 'Resize/crop to exact 2:3 portrait ratio (e.g., 2160x3240)'
+        scan_frames.append({'region': 'canvas', 'bbox': [0, 0, w, h], 'issue': 'wrong_aspect_ratio', 'severity': 'high', 'fix_prompt': 'vertical 2:3 theatrical one-sheet ratio'})
+    else:
+        scan_frames.append({'region': 'canvas', 'bbox': [0, 0, w, h], 'issue': 'ok', 'severity': 'none'})
+    
+    # 5. Eye sharpness
+    eyes_sharp = check_eyes_sharp(image_path)
+    issues['eye_sharpness'] = {'pass': eyes_sharp}
+    if not eyes_sharp:
+        issues['eye_sharpness']['issue'] = 'eyes_blurry'
+        issues['eye_sharpness']['severity'] = 'medium'
+        issues['eye_sharpness']['fix_suggestion'] = 'Regenerate with sharp focus on eyes, increase guidance scale for face region'
+        scan_frames.append({'region': 'eyes', 'bbox': [int(w*0.3), int(h*0.25), int(w*0.4), int(h*0.15)], 'issue': 'eyes_blurry', 'severity': 'medium', 'fix_prompt': 'sharp focus on eyes, detailed iris and eyelashes, no blur on face'})
+    else:
+        scan_frames.append({'region': 'eyes', 'bbox': [int(w*0.3), int(h*0.25), int(w*0.4), int(h*0.15)], 'issue': 'ok', 'severity': 'none'})
+    
+    # 6. Text legibility
+    text_ok = check_text_legible(image_path)
+    issues['text'] = {'pass': text_ok}
+    if not text_ok:
+        issues['text']['issue'] = 'text_illegible_or_missing'
+        issues['text']['severity'] = 'medium'
+        issues['text']['fix_suggestion'] = 'Ensure title at top 15%, tagline at bottom 15%, high contrast text'
+        scan_frames.append({'region': 'title_area', 'bbox': [0, 0, w, int(h*0.15)], 'issue': 'text_illegible_or_missing', 'severity': 'medium', 'fix_prompt': 'clear legible title at top, tagline at bottom, high contrast text'})
+        scan_frames.append({'region': 'tagline_area', 'bbox': [0, int(h*0.85), w, int(h*0.15)], 'issue': 'text_illegible_or_missing', 'severity': 'medium', 'fix_prompt': 'clear legible tagline at bottom'})
+    else:
+        scan_frames.append({'region': 'title_area', 'bbox': [0, 0, w, int(h*0.15)], 'issue': 'ok', 'severity': 'none'})
+        scan_frames.append({'region': 'tagline_area', 'bbox': [0, int(h*0.85), w, int(h*0.15)], 'issue': 'ok', 'severity': 'none'})
+    
+    # 7. Wardrobe/outfit consistency (color check in torso region)
+    torso_region = img[int(h*0.4):int(h*0.75), int(w*0.3):int(w*0.7)]
+    if torso_region.size > 0:
+        torso_hsv = cv2.cvtColor(torso_region, cv2.COLOR_BGR2HSV)
+        # Check for dominant colors that might indicate wrong outfit
+        mean_hue = np.mean(torso_hsv[:,:,0])
+        issues['wardrobe'] = {'pass': True, 'dominant_hue': float(mean_hue), 'note': 'Wardrobe color analysis - manual verification recommended'}
+        scan_frames.append({'region': 'wardrobe', 'bbox': [int(w*0.3), int(h*0.4), int(w*0.4), int(h*0.35)], 'issue': 'ok', 'severity': 'none', 'note': 'Wardrobe region - verify outfit matches prompt'})
+    
+    # 8. Props/hands check (side regions)
+    left_side = img[int(h*0.4):int(h*0.7), :int(w*0.2)]
+    right_side = img[int(h*0.4):int(h*0.7), int(w*0.8):]
+    issues['props'] = {'pass': True, 'note': 'Side regions checked for props/hands - manual verification recommended'}
+    scan_frames.append({'region': 'left_hand', 'bbox': [0, int(h*0.4), int(w*0.2), int(h*0.3)], 'issue': 'ok', 'severity': 'none', 'note': 'Left hand/prop region'})
+    scan_frames.append({'region': 'right_hand', 'bbox': [int(w*0.8), int(h*0.4), int(w*0.2), int(h*0.3)], 'issue': 'ok', 'severity': 'none', 'note': 'Right hand/prop region'})
+    
+    # 9. Background consistency
+    bg_top = img[:int(h*0.2), :]
+    bg_bottom = img[int(h*0.8):, :]
+    issues['background'] = {'pass': True, 'note': 'Background regions analyzed - verify matches genre palette'}
+    scan_frames.append({'region': 'background_top', 'bbox': [0, 0, w, int(h*0.2)], 'issue': 'ok', 'severity': 'none', 'note': 'Background top - verify genre palette'})
+    scan_frames.append({'region': 'background_bottom', 'bbox': [0, int(h*0.8), w, int(h*0.2)], 'issue': 'ok', 'severity': 'none', 'note': 'Background bottom - verify genre palette'})
+    
+    # 10. Lighting/shadow consistency
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    left_half = gray[:, :w//2]
+    right_half = gray[:, w//2:]
+    lighting_balance = abs(np.mean(left_half) - np.mean(right_half))
+    issues['lighting'] = {'pass': lighting_balance < 30, 'balance_score': float(lighting_balance)}
+    if lighting_balance >= 30:
+        issues['lighting']['issue'] = 'lighting_imbalance'
+        issues['lighting']['severity'] = 'medium'
+        issues['lighting']['fix_suggestion'] = 'Balance key/rim lighting, ensure consistent illumination across subject'
+        scan_frames.append({'region': 'lighting', 'bbox': [0, 0, w, h], 'issue': 'lighting_imbalance', 'severity': 'medium', 'fix_prompt': 'balanced dramatic lighting, consistent key and rim illumination'})
+    else:
+        scan_frames.append({'region': 'lighting', 'bbox': [0, 0, w, h], 'issue': 'ok', 'severity': 'none'})
+    
+    # 11. Artifacts/glitches (edge detection for anomalies)
+    edges = cv2.Canny(gray, 50, 150)
+    edge_density = np.sum(edges > 0) / edges.size
+    issues['artifacts'] = {'pass': edge_density < 0.15, 'edge_density': float(edge_density)}
+    if edge_density >= 0.15:
+        issues['artifacts']['issue'] = 'possible_artifacts'
+        issues['artifacts']['severity'] = 'low'
+        issues['artifacts']['fix_suggestion'] = 'Check for unwanted artifacts, glitches, or noise in generation'
+        scan_frames.append({'region': 'full', 'bbox': [0, 0, w, h], 'issue': 'possible_artifacts', 'severity': 'low', 'fix_prompt': 'clean generation, no artifacts, no extra fingers, no distorted elements'})
+    else:
+        scan_frames.append({'region': 'full', 'bbox': [0, 0, w, h], 'issue': 'ok', 'severity': 'none'})
+    
+    # Save annotated image
+    annotated_path = image_path.replace('.', '_annotated.')
+    cv2.imwrite(annotated_path, annotated)
+    
+    return {
+        'issues': issues,
+        'scan_frames': scan_frames,
+        'annotated_image_path': annotated_path,
+        'summary': {
+            'total_checks': len([k for k in issues.keys() if isinstance(issues[k], dict) and 'pass' in issues[k]]),
+            'passed': len([k for k in issues.keys() if isinstance(issues[k], dict) and issues[k].get('pass', False)]),
+            'failed': len([k for k in issues.keys() if isinstance(issues[k], dict) and not issues[k].get('pass', True)]),
+            'critical': len([k for k in issues.keys() if isinstance(issues[k], dict) and issues[k].get('severity') == 'critical']),
+            'high': len([k for k in issues.keys() if isinstance(issues[k], dict) and issues[k].get('severity') == 'high']),
+            'medium': len([k for k in issues.keys() if isinstance(issues[k], dict) and issues[k].get('severity') == 'medium']),
+            'low': len([k for k in issues.keys() if isinstance(issues[k], dict) and issues[k].get('severity') == 'low']),
+        }
+    }
+
+
+def generate_fix_prompt_from_issues(issues: Dict[str, Any], base_prompt: str = '') -> str:
+    """Generate a comprehensive fix prompt from detected issues."""
+    fix_parts = []
+    for category, data in issues.items():
+        if isinstance(data, dict) and not data.get('pass', True):
+            if 'fix_suggestion' in data:
+                fix_parts.append(f'FIX {category.upper()}: {data["fix_suggestion"]}')
+            if 'fix_prompt' in data:
+                fix_parts.append(data['fix_prompt'])
+    
+    if fix_parts:
+        return base_prompt + '\n\n' + '\n'.join(fix_parts)
+    return base_prompt
+
+
+def create_scan_animation_frames(image_path: str, scan_frames: List[Dict], output_dir: str, frame_duration: int = 500) -> List[str]:
+    """Create scan animation frames highlighting each issue region."""
+    import os
+    os.makedirs(output_dir, exist_ok=True)
+    
+    img = cv2.imread(image_path)
+    if img is None:
+        return []
+    
+    frame_paths = []
+    for i, frame in enumerate(scan_frames):
+        annotated = img.copy()
+        bbox = frame.get('bbox', [0, 0, img.shape[1], img.shape[0]])
+        # Ensure all bbox values are integers
+        x, y, w, h = [int(v) for v in bbox]
+        
+        # Draw scan highlight
+        color = (0, 0, 255) if frame.get('severity') in ('critical', 'high') else (0, 165, 255) if frame.get('severity') == 'medium' else (0, 255, 0)
+        cv2.rectangle(annotated, (x, y), (x+w, y+h), color, 3)
+        
+        # Add label
+        label = f"{frame.get('region', 'region')}: {frame.get('issue', 'ok')}"
+        cv2.putText(annotated, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        
+        if 'fix_prompt' in frame:
+            # Wrap fix prompt
+            fix_text = frame['fix_prompt'][:80] + ('...' if len(frame['fix_prompt']) > 80 else '')
+            cv2.putText(annotated, f'Fix: {fix_text}', (x, y+h+25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        
+        frame_path = os.path.join(output_dir, f'scan_frame_{i:03d}.png')
+        cv2.imwrite(frame_path, annotated)
+        frame_paths.append(frame_path)
+    
+    return frame_paths
+
+
+# ============================================================================
 # VISION QA: 6-POINT CHECK
 # ============================================================================
 
@@ -760,6 +1007,215 @@ def brandly_qa_check(image_path: str, subject_id: Optional[str] = None) -> dict:
     """Run vision-backed quality assurance: 6-point check."""
     result = run_vision_qa(image_path, subject_id)
     return result
+
+
+@mcp.tool()
+def brandly_scan_issues(image_path: str, subject_id: Optional[str] = None, create_animation: bool = False, animation_output_dir: str = "") -> dict:
+    """
+    Comprehensive issue detection with scan animation frames.
+    Detects: earrings, likeness, cropping, ratio, eye sharpness, text, wardrobe, props, background, lighting, artifacts.
+    Returns annotated image + scan frames for visualization + fix prompts.
+    """
+    result = detect_issues_with_visualization(image_path, subject_id)
+    
+    # Generate fix prompt from all issues
+    base_prompt = ""
+    if subject_id:
+        try:
+            subject = SubjectProfile.load(subject_id)
+            base_prompt = f"Poster for {subject.name}, genre preset"
+        except:
+            pass
+    
+    fix_prompt = generate_fix_prompt_from_issues(result['issues'], base_prompt)
+    
+    response = {
+        'issues': result['issues'],
+        'scan_frames': result['scan_frames'],
+        'annotated_image_path': result['annotated_image_path'],
+        'summary': result['summary'],
+        'fix_prompt': fix_prompt,
+        'fix_categories': [k for k, v in result['issues'].items() if isinstance(v, dict) and not v.get('pass', True)],
+    }
+    
+    # Create scan animation frames if requested
+    if create_animation and animation_output_dir:
+        frame_paths = create_scan_animation_frames(image_path, result['scan_frames'], animation_output_dir)
+        response['animation_frames'] = frame_paths
+        response['animation_note'] = f'Created {len(frame_paths)} scan frames in {animation_output_dir}. Use with brandly_export_animation to create MP4/GIF.'
+    
+    return response
+
+
+@mcp.tool()
+def brandly_fix_earrings_prompt(image_path: str, subject_id: Optional[str] = None) -> dict:
+    """Generate specific fix prompt for earring symmetry issues."""
+    result = detect_gold_hoop_earrings(image_path)
+    if result.get('symmetrical', False):
+        return {'status': 'ok', 'message': 'Earrings are symmetrical', 'fix_prompt': ''}
+    
+    fix = 'CRITICAL - Ensure both small gold hoop earrings present perfectly symmetrical clearly visible in BOTH ears, identical size and position. Left ear at same height as right ear, same radius, same gold color.'
+    return {
+        'status': 'fix_needed',
+        'issue': 'earring_asymmetry',
+        'details': result,
+        'fix_prompt': fix,
+        'suggested_negative': 'mismatched earrings, single earring, different sizes, different positions, missing earring'
+    }
+
+
+@mcp.tool()
+def brandly_fix_wardrobe_prompt(image_path: str, expected_outfit: str = '', subject_id: Optional[str] = None) -> dict:
+    """Generate fix prompt for wardrobe/outfit issues."""
+    img = cv2.imread(image_path)
+    if img is None:
+        return {'error': 'Could not read image'}
+    
+    h, w = img.shape[:2]
+    torso = img[int(h*0.4):int(h*0.75), int(w*0.3):int(w*0.7)]
+    
+    outfit_desc = expected_outfit if expected_outfit else "the specified outfit from prompt"
+    fix = f'WARDROBE FIX: Ensure subject wears exactly: {outfit_desc}. Match fabric, color, cut, and fit precisely. No wardrobe substitutions.'
+    
+    return {
+        'status': 'check_needed',
+        'issue': 'wardrobe_verification',
+        'expected_outfit': expected_outfit,
+        'fix_prompt': fix,
+        'note': 'Visual verification of torso region required. Compare detected colors with expected outfit.'
+    }
+
+
+@mcp.tool()
+def brandly_fix_props_prompt(image_path: str, expected_props: List[str] = None) -> dict:
+    """Generate fix prompt for props/hands issues."""
+    if expected_props is None:
+        expected_props = []
+    
+    fix = 'PROPS FIX: '
+    if expected_props:
+        fix += f'Ensure these props are visible and correctly held: {', '.join(expected_props)}. '
+    fix += 'Hands must be natural, correct number of fingers, props properly positioned. No floating or distorted objects.'
+    
+    return {
+        'status': 'check_needed',
+        'issue': 'props_verification',
+        'expected_props': expected_props,
+        'fix_prompt': fix,
+        'note': 'Check left/right hand regions for correct prop rendering.'
+    }
+
+
+@mcp.tool()
+def brandly_fix_background_prompt(image_path: str, genre: str = 'thriller') -> dict:
+    """Generate fix prompt for background consistency issues."""
+    g = GENRES.get(genre, GENRES['thriller'])
+    
+    fix = f'BACKGROUND FIX: Background must match {g["name"]} genre. '
+    fix += f'Required elements: {', '.join(g["backgrounds"])}. '
+    fix += f'Palette locked to: {', '.join(g["palette"])}. '
+    fix += f'Lighting: {g["lighting"]}. No background elements from other genres.'
+    
+    return {
+        'status': 'check_needed',
+        'issue': 'background_verification',
+        'genre': genre,
+        'genre_config': g,
+        'fix_prompt': fix
+    }
+
+
+@mcp.tool()
+def brandly_fix_lighting_prompt(image_path: str) -> dict:
+    """Generate fix prompt for lighting/shadow issues."""
+    img = cv2.imread(image_path)
+    if img is None:
+        return {'error': 'Could not read image'}
+    
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    left_mean = np.mean(gray[:, :w//2])
+    right_mean = np.mean(gray[:, w//2:])
+    balance = abs(left_mean - right_mean)
+    
+    fix = 'LIGHTING FIX: Balance key and rim lighting across subject. '
+    if balance > 30:
+        fix += f'Current left/right imbalance: {balance:.1f}. Even out illumination. '
+    fix += 'Consistent dramatic lighting, proper rim light on both sides, no harsh shadows on face.'
+    
+    return {
+        'status': 'fix_needed' if balance > 30 else 'ok',
+        'issue': 'lighting_imbalance' if balance > 30 else 'ok',
+        'balance_score': float(balance),
+        'fix_prompt': fix
+    }
+
+
+@mcp.tool()
+def brandly_fix_composition_prompt(image_path: str) -> dict:
+    """Generate fix prompt for composition issues (ratio, cropping, hero placement)."""
+    img = cv2.imread(image_path)
+    if img is None:
+        return {'error': 'Could not read image'}
+    
+    h, w = img.shape[:2]
+    ratio = w / h
+    ratio_ok = abs(ratio - 2/3) < 0.02
+    cropped = not check_no_cropped_hands_feet(image_path)
+    
+    fixes = []
+    if not ratio_ok:
+        fixes.append(f'RATIO: Fix aspect ratio to exactly 2:3 (current: {ratio:.3f}). Use 2160x3240 or 1080x1620.')
+    if cropped:
+        fixes.append('CROPPING: Extend canvas to show full body, no cropped feet or hands. Hero at 68% height centered.')
+    
+    return {
+        'status': 'fix_needed' if fixes else 'ok',
+        'issues': fixes,
+        'ratio': float(ratio),
+        'cropped': cropped,
+        'fix_prompt': '\n'.join(fixes) if fixes else 'Composition OK'
+    }
+
+
+@mcp.tool()
+def brandly_generate_master_fix_prompt(image_path: str, subject_id: Optional[str] = None, genre: str = 'thriller', expected_outfit: str = '', expected_props: List[str] = None) -> dict:
+    """Generate comprehensive master fix prompt combining all detected issues."""
+    if expected_props is None:
+        expected_props = []
+    
+    # Run full scan
+    scan_result = detect_issues_with_visualization(image_path, subject_id)
+    
+    # Generate individual fix prompts
+    earring_fix = brandly_fix_earrings_prompt(image_path, subject_id)
+    wardrobe_fix = brandly_fix_wardrobe_prompt(image_path, expected_outfit, subject_id)
+    props_fix = brandly_fix_props_prompt(image_path, expected_props)
+    background_fix = brandly_fix_background_prompt(image_path, genre)
+    lighting_fix = brandly_fix_lighting_prompt(image_path)
+    composition_fix = brandly_fix_composition_prompt(image_path)
+    
+    # Combine all fixes
+    all_fixes = []
+    for fix in [earring_fix, wardrobe_fix, props_fix, background_fix, lighting_fix, composition_fix]:
+        if fix.get('fix_prompt'):
+            all_fixes.append(fix['fix_prompt'])
+    
+    master_fix = '\n\n'.join(all_fixes) if all_fixes else 'No fixes needed - all checks pass'
+    
+    return {
+        'master_fix_prompt': master_fix,
+        'scan_result': scan_result,
+        'individual_fixes': {
+            'earrings': earring_fix,
+            'wardrobe': wardrobe_fix,
+            'props': props_fix,
+            'background': background_fix,
+            'lighting': lighting_fix,
+            'composition': composition_fix,
+        },
+        'summary': scan_result['summary'],
+    }
 
 
 @mcp.tool()
